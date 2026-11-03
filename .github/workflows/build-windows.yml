@@ -1,0 +1,38 @@
+name: Build Windows App
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unzip project
+        run: Expand-Archive -Path VideoEditorWin.zip -DestinationPath .
+      - name: Download FFmpeg
+        working-directory: VideoEditorWin
+        run: |
+          Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
+          New-Item -ItemType Directory -Force ffmpeg | Out-Null
+          Get-ChildItem ffmpeg_tmp -Recurse -Include ffmpeg.exe,ffprobe.exe | Copy-Item -Destination ffmpeg
+      - name: Install dependencies
+        working-directory: VideoEditorWin
+        run: pip install -r requirements.txt pyinstaller
+      - name: Build EXE
+        working-directory: VideoEditorWin
+        run: pyinstaller --noconfirm --windowed --name VideoEditor --icon app.ico --add-data "app.ico;." --add-binary "ffmpeg/ffmpeg.exe;ffmpeg" --add-binary "ffmpeg/ffprobe.exe;ffmpeg" main.py
+      - name: Zip app
+        run: Compress-Archive -Path VideoEditorWin/dist/VideoEditor -DestinationPath VideoEditor-Windows.zip
+      - name: Create release
+        run: gh release create "win-v${{ github.run_number }}" VideoEditor-Windows.zip --title "Windows Build ${{ github.run_number }}" --notes "Automated build" --target ${{ github.sha }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
